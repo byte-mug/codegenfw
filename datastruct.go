@@ -141,4 +141,33 @@ func NewLiteral(dst interface{},val string) *Expr {
 type Block struct{
 	Childs list.List
 }
+type ControlStruct struct{
+	Block
+	Fmt string
+	Src []ExprRef
+	Fmt2 string
+	Src2 []ExprRef
+}
+func ControlStruct1(fmt string,src ...interface{}) *ControlStruct {
+	return ControlStruct3(fmt,src,"",nil)
+}
+func ControlStruct2(fmt string,src ...interface{}) *ControlStruct {
+	return ControlStruct3("",nil,fmt,src)
+}
+func ControlStruct3(fmt string,src []interface{},fmt2 string,src2 []interface{}) *ControlStruct {
+	c := new(ControlStruct)
+	c.Childs.Init()
+	c.Fmt = fmt
+	c.Fmt2 = fmt2
+	if l := len(src); l>0 {
+		c.Src = make([]ExprRef,l)
+		for i,srci := range src { c.Src[i] = NewExprRef(srci) }
+	}
+	if l := len(src2); l>0 {
+		c.Src2 = make([]ExprRef,l)
+		for i,srci := range src2 { c.Src2[i] = NewExprRef(srci) }
+	}
+	return c
+}
+
 

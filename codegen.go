@@ -93,29 +93,37 @@ func revcnt_count_first(i interface{},ok bool) int {
 
 type Generator struct{
 	Dest io.Writer
+	Indent string
 	revcnt,tree ExprRefMap
 	//count ExprRefMap
+	ind string
+}
+func (g *Generator) pushind() func() {
+	o := g.ind
+	g.ind = o+g.Indent
+	return func(){ g.ind = o }
 }
 func (g *Generator) Sync(ga GenAction) {
 	if ga==GA_GENERATE {
+		kl := []ExprRef{}
 		g.tree.Iterate(func(k ExprRef,v interface{}){
 			if k.SSA() { return }
-			fmt.Fprintln(g.Dest,"%s = %s ;\n",k.Name,v)
+			fmt.Fprintf(g.Dest,"%s%s = %s ;\n",g.ind,k.Name,v)
+			kl = append(kl,k)
 		})
+		for _,k := range kl { g.tree.Delete(k) }
 	}
 }
-func (g *Generator) Expr(e *Expr,ga GenAction) {
+
+func (g *Generator) vec(src []ExprRef,ga GenAction) []interface{} {
 	switch ga {
 	case GA_COUNT:
-		for _,r := range e.Src {
+		for _,r := range src {
 			g.revcnt.Update(r,revcnt_incr)
 		}
-		if e.Flags.Has(E_HAS_DEST) {
-			g.revcnt.Update(e.Dest,revcnt_newrev)
-		}
 	case GA_GENERATE:
-		vec := make([]interface{},len(e.Src))
-		for i,r := range e.Src {
+		vec := make([]interface{},len(src))
+		for i,r := range src {
 			if t,ok := g.tree.Update(r,Noop); ok {
 				vec[i] = t
 			} else if r.SSA() {
@@ -126,6 +134,18 @@ func (g *Generator) Expr(e *Expr,ga GenAction) {
 			cnt := revcnt_count_first(g.revcnt.Update(r,revcnt_decr_first))
 			if cnt<1 { g.tree.Delete(r) }
 		}
+		return vec
+	}
+	return nil
+}
+func (g *Generator) Expr(e *Expr,ga GenAction) {
+	vec := g.vec(e.Src,ga)
+	switch ga {
+	case GA_COUNT:
+		if e.Flags.Has(E_HAS_DEST) {
+			g.revcnt.Update(e.Dest,revcnt_newrev)
+		}
+	case GA_GENERATE:
 		subtree := e.Fmt
 		if e.Flags.Has(E_LITERAL) {
 			if len(vec)>0 { panic("Literals must not have operands") }
@@ -141,16 +161,17 @@ func (g *Generator) Expr(e *Expr,ga GenAction) {
 			} else if e.Dest.SSA() {
 				panic("SSA must not be used more often than one time")
 			} else {
-				fmt.Fprintf(g.Dest,"%s = %s ;",e.Dest.Name,subtree)
+				fmt.Fprintf(g.Dest,"%s%s = %s ;",g.ind,e.Dest.Name,subtree)
 			}
 		} else {
-			fmt.Fprintf(g.Dest,"%s ;\n",subtree)
+			fmt.Fprintf(g.Dest,"%s%s ;\n",g.ind,subtree)
 			
 		}
 	}
 }
 
 func (g *Generator) Block(b *Block,ga GenAction) {
+	defer g.pushind()()
 	for e := b.Childs.Front(); e!=nil; e = e.Next() {
 		if x,ok := e.Value.(*Expr); ok {
 			g.Expr(x,ga)
@@ -159,6 +180,26 @@ func (g *Generator) Block(b *Block,ga GenAction) {
 			g.Sync(ga)
 			g.Block(x,ga)
 		}
+		
+		if x,ok := e.Value.(*ControlStruct); ok {
+			g.Sync(ga)
+			vec := g.vec(x.Src,ga)
+			switch ga{
+			case GA_GENERATE:
+				fmt.Fprintf(g.Dest,"%s",g.ind)
+				fmt.Fprintf(g.Dest,x.Fmt,vec...)
+				fmt.Fprintln(g.Dest,"{",)
+			}
+			g.Block(&x.Block,ga)
+			vec = g.vec(x.Src2,ga)
+			switch ga{
+			case GA_GENERATE:
+				fmt.Fprintf(g.Dest,"%s}",g.ind)
+				fmt.Fprintf(g.Dest,x.Fmt2,vec...)
+				fmt.Fprintln(g.Dest)
+			}
+		}
+		
 	}
 	g.Sync(ga)
 }

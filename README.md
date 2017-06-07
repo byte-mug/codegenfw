@@ -15,14 +15,18 @@ func out(w io.Writer) {
 	blk := new(codegenfw.Block)
 	blk.Childs.Init()
 	{
-		blk.Childs.PushBack(codegenfw.NewLiteral(1,`"Hello!"`))
-		blk.Childs.PushBack(codegenfw.NewExpr("printf(%s)",0,nil,1))
+		blk.Childs.PushBack(codegenfw.NewLiteral("a",`1`))
+		doif := codegenfw.ControlStruct1("if(%s)","a")
+		blk.Childs.PushBack(doif)
+			doif.Childs.PushBack(codegenfw.NewLiteral(1,`"Hello!"`))
+			doif.Childs.PushBack(codegenfw.NewExpr("printf(%s)",0,nil,1))
 	}
 	fmt.Fprintln(w,"#include","<stdio.h>")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w,"void main(){")
+	fmt.Fprintln(w,"int a;")
 	{
-		gen := &codegenfw.Generator{Dest:w}
+		gen := &codegenfw.Generator{Dest:w,Indent:"\t"}
 		gen.Block(blk,codegenfw.GA_COUNT)
 		gen.Block(blk,codegenfw.GA_GENERATE)
 	}
