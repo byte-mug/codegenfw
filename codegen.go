@@ -39,6 +39,11 @@ const (
 	GA_GENERATE
 )
 
+const (
+	curlo = "{"
+	curlc = "}"
+)
+
 func revcnt_incr(i interface{},ok bool) (interface{},bool) {
 	if !ok { i = []int{0} }
 	arr,ok := i.([]int)
@@ -188,15 +193,27 @@ func (g *Generator) Block(b *Block,ga GenAction) {
 			case GA_GENERATE:
 				fmt.Fprintf(g.Dest,"%s",g.ind)
 				fmt.Fprintf(g.Dest,x.Fmt,vec...)
-				fmt.Fprintln(g.Dest,"{",)
+				fmt.Fprintln(g.Dest,curlo)
 			}
 			g.Block(&x.Block,ga)
 			vec = g.vec(x.Src2,ga)
 			switch ga{
 			case GA_GENERATE:
-				fmt.Fprintf(g.Dest,"%s}",g.ind)
+				fmt.Fprintf(g.Dest,"%s%s",g.ind,curlc)
 				fmt.Fprintf(g.Dest,x.Fmt2,vec...)
-				fmt.Fprintln(g.Dest)
+				if x.EBlock!=nil {
+					fmt.Fprintln(g.Dest,curlo)
+				}else{
+					fmt.Fprintln(g.Dest)
+				}
+			}
+			if x.EBlock!=nil {
+				g.Block(x.EBlock,ga)
+				switch ga{
+				case GA_GENERATE:
+					fmt.Fprintf(g.Dest,"%s%s",g.ind,curlc)
+					fmt.Fprintln(g.Dest)
+				}
 			}
 		}
 		

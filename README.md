@@ -16,10 +16,14 @@ func out(w io.Writer) {
 	blk.Childs.Init()
 	{
 		blk.Childs.PushBack(codegenfw.NewLiteral("a",`1`))
-		doif := codegenfw.ControlStruct1("if(%s)","a")
+		doif := codegenfw.CS_If_Then_Else("a")
+		// if-then-else
 		blk.Childs.PushBack(doif)
 			doif.Childs.PushBack(codegenfw.NewLiteral(1,`"Hello!"`))
 			doif.Childs.PushBack(codegenfw.NewExpr("printf(%s)",0,nil,1))
+		doelse := doif.EBlock
+			doelse.Childs.PushBack(codegenfw.NewLiteral(2,`"Hello!"`))
+			doelse.Childs.PushBack(codegenfw.NewExpr("printf(%s)",0,nil,2))
 	}
 	fmt.Fprintln(w,"#include","<stdio.h>")
 	fmt.Fprintln(w)

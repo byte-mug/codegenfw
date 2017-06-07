@@ -147,6 +147,20 @@ type ControlStruct struct{
 	Src []ExprRef
 	Fmt2 string
 	Src2 []ExprRef
+	
+	// The "else"-block. This is called "else" block because
+	// it is only useful when "if-then-else" is used.
+	EBlock *Block
+}
+func CS_If_Then_Else(cond interface{}) *ControlStruct {
+	c := new(ControlStruct)
+	c.Childs.Init()
+	c.EBlock = new(Block)
+	c.EBlock.Childs.Init()
+	c.Fmt = "if(%s)"
+	c.Fmt2 = "else"
+	c.Src = []ExprRef{NewExprRef(cond)}
+	return c
 }
 func ControlStruct1(fmt string,src ...interface{}) *ControlStruct {
 	return ControlStruct3(fmt,src,"",nil)
