@@ -166,7 +166,7 @@ func (g *Generator) Expr(e *Expr,ga GenAction) {
 			} else if e.Dest.SSA() {
 				panic("SSA must not be used more often than one time")
 			} else {
-				fmt.Fprintf(g.Dest,"%s%s = %s ;",g.ind,e.Dest.Name,subtree)
+				fmt.Fprintf(g.Dest,"%s%s = %s ;\n",g.ind,e.Dest.Name,subtree)
 			}
 		} else {
 			fmt.Fprintf(g.Dest,"%s%s ;\n",g.ind,subtree)
@@ -189,16 +189,14 @@ func (g *Generator) Block(b *Block,ga GenAction) {
 		if x,ok := e.Value.(*ControlStruct); ok {
 			g.Sync(ga)
 			vec := g.vec(x.Src,ga)
-			switch ga{
-			case GA_GENERATE:
+			if ga == GA_GENERATE {
 				fmt.Fprintf(g.Dest,"%s",g.ind)
 				fmt.Fprintf(g.Dest,x.Fmt,vec...)
 				fmt.Fprintln(g.Dest,curlo)
 			}
 			g.Block(&x.Block,ga)
 			vec = g.vec(x.Src2,ga)
-			switch ga{
-			case GA_GENERATE:
+			if ga == GA_GENERATE {
 				fmt.Fprintf(g.Dest,"%s%s",g.ind,curlc)
 				fmt.Fprintf(g.Dest,x.Fmt2,vec...)
 				if x.EBlock!=nil {
@@ -209,10 +207,31 @@ func (g *Generator) Block(b *Block,ga GenAction) {
 			}
 			if x.EBlock!=nil {
 				g.Block(x.EBlock,ga)
-				switch ga{
-				case GA_GENERATE:
+				if ga == GA_GENERATE {
 					fmt.Fprintf(g.Dest,"%s%s",g.ind,curlc)
 					fmt.Fprintln(g.Dest)
+				}
+			}
+		}
+		if x,ok := e.Value.(Label); ok {
+			g.Sync(ga)
+			if ga == GA_GENERATE {
+				fmt.Fprintf(g.Dest,"%s:\n",string(x))
+			}
+		}
+		if x,ok := e.Value.(GoTo); ok {
+			g.Sync(ga)
+			if ga == GA_GENERATE {
+				fmt.Fprintf(g.Dest,"%sgoto %s;\n",g.ind,string(x))
+			}
+		}
+		if x,ok := e.Value.(EnforceStore); ok {
+			if (ga == GA_GENERATE) && len(x)>0 {
+				er := ExprRef{string(x),0}
+				s,ok := g.tree.Update(er,Noop)
+				if ok {
+					fmt.Fprintf(g.Dest,"%s%s = %s;\n",g.ind,er.Name,s)
+					g.tree.Delete(er)
 				}
 			}
 		}

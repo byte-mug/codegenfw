@@ -184,4 +184,8 @@ func ControlStruct3(fmt string,src []interface{},fmt2 string,src2 []interface{})
 	return c
 }
 
+type Label string
+type GoTo string
+
+type EnforceStore string
 
