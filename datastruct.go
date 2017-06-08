@@ -35,7 +35,16 @@ const (
 	E_HAS_DEST = EFlags(1<<iota)
 	E_CHEAP
 	E_LITERAL
+	E_NO_OMIT
+	
+	E_TIME_CRITICAL // time critical instructions must not be reordered.
 )
+
+const eflags_and = E_CHEAP|E_LITERAL
+
+func efjoin(o,a EFlags) EFlags {
+	return (o & ^eflags_and)|(a & eflags_and)
+}
 
 type ExprRef struct{
 	Name string
@@ -134,9 +143,27 @@ func NewExpr(fmt string,f EFlags,dst interface{}, src ...interface{}) (result *E
 	}
 	return
 }
+
+// New Operation (eg. Flags = E_CHEAP)
+func NewOp(fmt string,dst interface{}, src ...interface{}) (result *Expr) {
+	return NewExpr(fmt,E_CHEAP,dst,src...)
+}
+
+// New Expression that is a call (eg. Flags = E_TIME_CRITICAL)
+func NewCall(fmt string,dst interface{}, src ...interface{}) (result *Expr) {
+	return NewExpr(fmt,E_TIME_CRITICAL,dst,src...)
+}
+
+// New Expression with side effect. (eg. Flags = E_NO_OMIT)
+func NewSE(fmt string,dst interface{}, src ...interface{}) (result *Expr) {
+	return NewExpr(fmt,E_NO_OMIT,dst,src...)
+}
+
+
 func NewLiteral(dst interface{},val string) *Expr {
 	return &Expr{NewExprRef(dst),nil,val,E_HAS_DEST|E_LITERAL|E_CHEAP}
 }
+
 
 type Block struct{
 	Childs list.List
@@ -188,4 +215,16 @@ type Label string
 type GoTo string
 
 type EnforceStore string
+
+type Declaration struct{
+	DataType string
+	Names []string
+}
+func Declare(t string, names ...string) *Declaration { return &Declaration{t,names} }
+
+type SetVolatile struct{
+	Variable string
+	Volatile bool
+}
+
 

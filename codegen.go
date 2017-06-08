@@ -35,13 +35,19 @@ import (
 type GenAction uint
 
 const (
-	GA_COUNT = GenAction(1<<iota)
+	GA_COUNT = GenAction(iota)
 	GA_GENERATE
 )
 
 const (
 	curlo = "{"
 	curlc = "}"
+)
+
+type GenFlags uint
+func (a GenFlags) Has(b GenFlags) bool { return (a&b)==b }
+const (
+	GF_ENFORCE_STORE = GenFlags(1<<iota)
 )
 
 func revcnt_incr(i interface{},ok bool) (interface{},bool) {
@@ -95,12 +101,29 @@ func revcnt_count_first(i interface{},ok bool) int {
 	if len(n)==0 { return 0 }
 	return n[0]
 }
+func eflags_cast(i interface{},ok bool) EFlags {
+	j,ok2 := i.(EFlags)
+	if ok&&ok2 { return j }
+	return 0
+}
+
+func bool_cast(i interface{},ok bool) bool {
+	j,ok2 := i.(bool)
+	return ok && ok2 && j
+}
+
+func (e EFlags) set(i interface{},ok bool) (interface{},bool) {
+	return (e|eflags_cast(i,ok)),true
+}
+func (e EFlags) clear(i interface{},ok bool) (interface{},bool) {
+	return (eflags_cast(i,ok)&^e),true
+}
 
 type Generator struct{
 	Dest io.Writer
 	Indent string
-	revcnt,tree ExprRefMap
-	//count ExprRefMap
+	Flags GenFlags
+	revcnt,tree,eflags,volm ExprRefMap
 	ind string
 }
 func (g *Generator) pushind() func() {
@@ -120,7 +143,7 @@ func (g *Generator) Sync(ga GenAction) {
 	}
 }
 
-func (g *Generator) vec(src []ExprRef,ga GenAction) []interface{} {
+func (g *Generator) vec(src []ExprRef,ga GenAction) ([]interface{},EFlags,EFlags) {
 	switch ga {
 	case GA_COUNT:
 		for _,r := range src {
@@ -128,23 +151,33 @@ func (g *Generator) vec(src []ExprRef,ga GenAction) []interface{} {
 		}
 	case GA_GENERATE:
 		vec := make([]interface{},len(src))
+		aflags := ^EFlags(0)
+		oflags := EFlags(0)
 		for i,r := range src {
 			if t,ok := g.tree.Update(r,Noop); ok {
 				vec[i] = t
+				temp1 := eflags_cast(g.eflags.Update(r,Noop))
+				oflags |= temp1
+				aflags &= temp1
 			} else if r.SSA() {
 				panic(fmt.Sprint("no such value: ",r))
 			} else {
 				vec[i] = r.Name
 			}
 			cnt := revcnt_count_first(g.revcnt.Update(r,revcnt_decr_first))
-			if cnt<1 { g.tree.Delete(r) }
+			if cnt<1 {
+				g.tree.Delete(r)
+				g.eflags.Delete(r)
+			}
 		}
-		return vec
+		return vec,oflags,aflags
 	}
-	return nil
+	return nil,0,0
 }
 func (g *Generator) Expr(e *Expr,ga GenAction) {
-	vec := g.vec(e.Src,ga)
+	vec,oflags,aflags := g.vec(e.Src,ga)
+	oflags |= e.Flags
+	aflags &= e.Flags
 	switch ga {
 	case GA_COUNT:
 		if e.Flags.Has(E_HAS_DEST) {
@@ -159,18 +192,42 @@ func (g *Generator) Expr(e *Expr,ga GenAction) {
 		}
 		if e.Flags.Has(E_HAS_DEST) {
 			cnt := revcnt_count_first(g.revcnt.Update(e.Dest,revcnt_pullrev))
-			if cnt==1 {
+			nflags := efjoin(oflags,aflags)
+			
+			// Whether Store is required or not.
+			require_store := g.Flags.Has(GF_ENFORCE_STORE)||
+				// Time-Critical instructions must be evaluated immediately.
+				nflags.Has(E_TIME_CRITICAL)||
+				
+				// if the destination variable is volatile, store is required
+				bool_cast(g.volm.Update(e.Dest,Noop))
+			
+			// wether the code must be evaluated or not.
+			must_evaluate := nflags.Has(E_NO_OMIT)||
+				nflags.Has(E_TIME_CRITICAL)
+			
+			if require_store && !e.Dest.SSA() {
+				fmt.Fprintf(g.Dest,"%s%s = %s ;\n",g.ind,e.Dest.Name,subtree)
+			} else if cnt==1 {
 				g.tree.Update(e.Dest,Put(subtree))
-			} else if e.Flags.Has(E_CHEAP) {
+				g.eflags.Update(e.Dest,Put(nflags))
+			} else if nflags.Has(E_CHEAP) {
 				g.tree.Update(e.Dest,Put(subtree))
+				g.eflags.Update(e.Dest,Put(nflags))
 			} else if e.Dest.SSA() {
-				panic("SSA must not be used more often than one time")
+				if cnt==0 { // oops... the code doesn't consume the value.
+					
+					// In this case, the code must be evaluated.
+					if must_evaluate {
+						fmt.Fprintf(g.Dest,"%s%s ;\n",g.ind,subtree)
+					}
+				}
+				panic("When SSA, value count must be 1")
 			} else {
 				fmt.Fprintf(g.Dest,"%s%s = %s ;\n",g.ind,e.Dest.Name,subtree)
 			}
 		} else {
 			fmt.Fprintf(g.Dest,"%s%s ;\n",g.ind,subtree)
-			
 		}
 	}
 }
@@ -183,19 +240,25 @@ func (g *Generator) Block(b *Block,ga GenAction) {
 		}
 		if x,ok := e.Value.(*Block); ok {
 			g.Sync(ga)
+			if ga == GA_GENERATE {
+				fmt.Fprintf(g.Dest,"%s%s\n",g.ind,curlo)
+			}
 			g.Block(x,ga)
+			if ga == GA_GENERATE {
+				fmt.Fprintf(g.Dest,"%s%s\n",g.ind,curlc)
+			}
 		}
 		
 		if x,ok := e.Value.(*ControlStruct); ok {
 			g.Sync(ga)
-			vec := g.vec(x.Src,ga)
+			vec,_,_ := g.vec(x.Src,ga)
 			if ga == GA_GENERATE {
 				fmt.Fprintf(g.Dest,"%s",g.ind)
 				fmt.Fprintf(g.Dest,x.Fmt,vec...)
 				fmt.Fprintln(g.Dest,curlo)
 			}
 			g.Block(&x.Block,ga)
-			vec = g.vec(x.Src2,ga)
+			vec,_,_ = g.vec(x.Src2,ga)
 			if ga == GA_GENERATE {
 				fmt.Fprintf(g.Dest,"%s%s",g.ind,curlc)
 				fmt.Fprintf(g.Dest,x.Fmt2,vec...)
@@ -235,7 +298,31 @@ func (g *Generator) Block(b *Block,ga GenAction) {
 				}
 			}
 		}
-		
+		if x,ok := e.Value.(*Declaration); ok {
+			if (ga == GA_GENERATE) && len(x.Names)>0 {
+				fmt.Fprintf(g.Dest,"%s%s %s",g.ind,x.DataType,x.Names[0])
+				for _,n := range x.Names[1:] { fmt.Fprintf(g.Dest," ,%s",n) }
+				fmt.Fprintln(g.Dest," ;")
+			}
+		}
+		if x,ok := e.Value.(SetVolatile); ok {
+			if (ga == GA_GENERATE) && len(x.Variable)>0 {
+				er := ExprRef{x.Variable,0}
+				g.volm.Update(er,Put(x.Volatile))
+				
+				/*
+				If the variable is now volatile, enforce store.
+				*/
+				if x.Volatile {
+					s,ok := g.tree.Update(er,Noop)
+					if ok {
+						fmt.Fprintf(g.Dest,"%s%s = %s;\n",g.ind,er.Name,s)
+						g.tree.Delete(er)
+						g.eflags.Delete(er)
+					}
+				}
+			}
+		}
 	}
 	g.Sync(ga)
 }
