@@ -1,4 +1,4 @@
-# Code Generation Framework (to generate C code)
+# Code Generation Library (to generate C code)
 
 Not usable yet......
 
