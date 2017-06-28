@@ -298,6 +298,22 @@ func (g *Generator) Block(b *Block,ga GenAction) {
 				}
 			}
 		}
+		if x,ok := e.Value.(TouchVariable); ok {
+			if len(x)>0 {
+				er := ExprRef{string(x),0}
+				switch ga {
+				case GA_COUNT:
+					g.revcnt.Update(er,revcnt_incr)
+				case GA_GENERATE:
+					g.revcnt.Update(er,revcnt_decr_first)
+					s,ok := g.tree.Update(er,Noop)
+					if ok {
+						fmt.Fprintf(g.Dest,"%s%s = %s;\n",g.ind,er.Name,s)
+						g.tree.Delete(er)
+					}
+				}
+			}
+		}
 		if x,ok := e.Value.(*Declaration); ok {
 			if (ga == GA_GENERATE) && len(x.Names)>0 {
 				fmt.Fprintf(g.Dest,"%s%s %s",g.ind,x.DataType,x.Names[0])

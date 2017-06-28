@@ -17,7 +17,7 @@ func out(w io.Writer) {
 	{
 		blk.Childs.PushBack(codegenfw.Declare("int","a"))
 		blk.Childs.PushBack(codegenfw.NewLiteral("a","7"))
-		blk.Childs.PushBack(codegenfw.EnforceStore("a"))
+		blk.Childs.PushBack(codegenfw.TouchVariable("a"))
 		blk.Childs.PushBack(codegenfw.NewLiteral(1,`"Let's begin!"`))
 		blk.Childs.PushBack(codegenfw.NewCall("printf(%s)",nil,1))
 		blk.Childs.PushBack(codegenfw.Label("restart"))

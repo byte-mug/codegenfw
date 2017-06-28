@@ -216,6 +216,8 @@ type GoTo string
 
 type EnforceStore string
 
+type TouchVariable string
+
 type Declaration struct{
 	DataType string
 	Names []string
